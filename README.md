@@ -1,9 +1,17 @@
-# hhpup
+# shopify-bulk-product-update
+
+A sample app that performs bulk update of shopify prices and quantities.
 
 ## Description
 
-windows task calls app on a daily basis.  The task opens browser and navigates to merge url to trigger update.
-log file is populated with what changed.  log file is in json format so can be viewed in app.
+1. Parses local products csv file
+2. Retrieves products from shopify
+3. Finds products that require updating
+4. Updates products prices and quantities
+
+NOTE: this is a sample app only, it may prove useful to people getting started with shopify graphql bulk api.
+
+Endpoints in controller are callable via client app.
 
 ## Installation
 
