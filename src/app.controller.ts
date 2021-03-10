@@ -103,10 +103,16 @@ export class AppController {
     const productUpdateQuery = products.map((product, i) => {
       product.id = 'id' + i + 'id';
       const id = product.inventoryLevelId;
-      const delta = this.appService.calculateDelta(
-        product.quantity,
-        product.local.Quantity,
-      );
+
+      let delta;
+      if(product.local.Quantity === 0) {
+        delta = -Math.abs(product.quantity); 
+      } else {
+        delta = this.appService.calculateDelta(
+          product.quantity,
+          product.local.Quantity,
+        );
+      }
       this.logger.info(
         `Updating quantity: ${product.title}, ${product.gid}, new quantity: ${product.local.Quantity}, old quantity: ${product.quantity}`,
       );
