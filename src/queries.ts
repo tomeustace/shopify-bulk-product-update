@@ -1,4 +1,4 @@
-import { shopifylocationId } from 'shopify-config';
+import { shopifyLocationId } from './shopify-config';
 
 /**
  * MUTATIONS
@@ -71,7 +71,7 @@ export const bulkProducts = `
                     id
                     inventoryItem {
                         sku
-                        inventoryLevel(locationId: "${shopifylocationId}") {
+                        inventoryLevel(locationId: "${shopifyLocationId}") {
                           id
                           available
                         }
@@ -81,6 +81,9 @@ export const bulkProducts = `
               }
               priceRange {
                 maxVariantPrice {
+                  amount
+                },
+                minVariantPrice {
                   amount
                 }
               }
@@ -124,7 +127,7 @@ export const productsQueryFirst = `{
                 id
                 inventoryItem {
                     sku
-                    inventoryLevel(locationId: "${shopifylocationId}") {
+                    inventoryLevel(locationId: "${shopifyLocationId}") {
                       id
                       available
                     }
@@ -162,7 +165,7 @@ export function productsQueryNext(cursor: string) {
                 id
                 inventoryItem {
                     sku
-                    inventoryLevel(locationId: "${shopifylocationId}") {
+                    inventoryLevel(locationId: "${shopifyLocationId}") {
                       id
                       available
                     }
@@ -191,7 +194,7 @@ export function getInventoryLevelQuery(productId: string) {
             node {
               id
               inventoryItem {
-                inventoryLevel(locationId: "${shopifylocationId}") {
+                inventoryLevel(locationId: "${shopifyLocationId}") {
                   id
                 }
               }

@@ -70,6 +70,50 @@ export class AppController {
       }, 10000);
     });
   }
+  
+  @Get('/products/bulk')
+  productsBulk(): Promise<any> {
+    if (this.productEdges.length > 0) {
+      return new Promise((resolve => {
+        resolve(JSON.stringify(this.productEdges));
+      }));
+    }
+    
+    return this.appService.getBulkProducts().then(res => {
+      this.logger.info('getBulkProducts()', res);
+
+      // read bulk file after 10 seconds
+      this.pollInterval = setTimeout(() => {
+        this.appService
+          .pollBulkProducts()
+          .then(pres => {
+            this.logger.info('pollBulkProducts()', pres);
+            return pres.json();
+          })
+          .then(r => {
+            this.logger.info('pollBulkProducts()', r);
+            if (r.data.currentBulkOperation.status === 'COMPLETED') {
+              clearInterval(this.pollInterval);
+              if (r.data.currentBulkOperation.url) {
+                const file = fs.createWriteStream(filePath);
+                https.get(
+                  r.data.currentBulkOperation.url,
+                  function(response) {
+                    response.pipe(file);
+                    setTimeout(() => {
+                      this.readShopifyFile().then(res => {
+                        this.doMerge();
+                      });
+                    }, 10000);
+                  }.bind(this),
+                );
+              }
+            }
+          });
+      }, 10000);
+      return JSON.stringify({data: 'bulk requested'});
+    });
+  }
 
   async readShopifyFile() {
     this.logger.info('readShopifyFile()');
@@ -86,6 +130,7 @@ export class AppController {
         prod.quantity = value[0].totalInventory.toString();
         this.productEdges.push(prod);
     }
+    // console.log("readShopifyFile()", this.productEdges.length);
   }
 
   async readLocalShopCsv(): Promise<any> {
@@ -186,12 +231,31 @@ export class AppController {
       });
   }
 
+  /**
+   * Merges shopify product info with local product info.
+   * This will show any differences in price or quantity. 
+   * @returns Merged array of shopify and local quantity and price information
+   */
+  @Get('/products/list')
+  productList(): Promise<any> {
+    // bulk request must be sent before this is called
+    // so productEdges is populated.
+    return this.mergeShopifyWithLocal(this.productEdges)
+      .then(res => {
+        this.logger.info(`products() ${res}`);
+        return JSON.stringify(res);
+      })
+      .catch(err => {
+        this.logger.error(err);
+      });
+  }
+  
   @Get('/products')
   products(): Promise<any> {
     return this.appService
       .products()
       .then(res => res.json())
-      .then(res => this.parseShopifyJson(res))
+      // .then(res => this.parseShopifyJson(res))
       .then(json => this.mergeShopifyWithLocal(json))
       .then(json => this.findProductsToUpdate(json))
       .then(res => {
@@ -211,7 +275,7 @@ export class AppController {
     return this.appService
       .products()
       .then(res => res.json())
-      .then(res => this.parseShopifyJson(res))
+      // .then(res => this.parseShopifyJson(res))
       .then(json => this.mergeShopifyWithLocal(json))
       .then(json => this.findProductsToUpdate(json))
       .then(productsToUpdate => this.updateQuantities(productsToUpdate))
@@ -313,6 +377,7 @@ export class AppController {
   }
 
   findProductsToUpdate(mergedProducts: any): any {
+    // console.log("findProductsToUpdate()", mergedProducts);
     this.logger.info(`findProductsToUpdate() mergedProducts: ${mergedProducts.length}`);
     const priceUpdateRequired = mergedProducts.filter(product => {
       return this.priceUpdate(product);
@@ -365,52 +430,100 @@ export class AppController {
    * Get the inventory level id needed to mutate inventory
    * @param json Product variant that contains inventory level id
    */
-  private async parseInventoryLevels(json) {
-    if (json.data.product) {
-      const pds = json.data.product.variants.edges.map(variant => {
-        return variant;
+  // private async parseInventoryLevels(json) {
+  //   if (json.data.product) {
+  //     const pds = json.data.product.variants.edges.map(variant => {
+  //       return variant;
+  //     });
+  //     return pds;
+  //   }
+  //   return {};
+  // }
+
+  // private async parseShopifyJson(json) {
+  //   this.logger.info(`parseShopifyJson()`);
+  //   if (!json.data) {
+  //     this.logger.error(`Error parsing products: ${Object.keys(json)}`);
+  //     return {};
+  //   }
+
+  //   const edges = json.data.products.edges;
+  //   if (json.data.products.pageInfo.hasNextPage) {
+  //     this.productEdges.concat(json.data.products.edges);
+  //     this.logger.info(`parseShopifyJson() ${this.productEdges.length}`);
+  //   }
+
+  //   if (json.data && json.data.products) {
+  //     let pds = json.data.products.edges.map(product => {
+  //       let sku = product.node.variants.edges[0].node.inventoryItem.sku;
+  //       product.shopifyId = sku;
+  //       return product;
+  //     });
+  //     return pds;
+  //   } else {
+  //     this.logger.error('no products' + Object.keys(json));
+  //     return {};
+  //   }
+  // }
+
+  /**
+   * Returns items where there is no local barcord that matches
+   * the shopify bar code.
+   * @param json
+   */
+  @Get('/products/mismatch')
+  async barCodeMismatch(): Promise<any> {
+    return this.readLocalShopCsv().then(data => {
+      return neatCsv(data, { separator: ' ' }).then(res => {
+        console.log("mergeShopifyWithLocal() - local products", res.length);
+        // missing bar codes from parsed csv??
+        const lookupCodes = res.map(r => r.ItemLookupCode)
+        const missingBarcode = this.productEdges.filter((d) => {
+          return !lookupCodes.includes(d.shopifyId);
+        });
+        console.log("mergeShopifyWithLocal() - missing bar codes", missingBarcode.length);
+        return missingBarcode;
       });
-      return pds;
-    }
-    return {};
+    });
+  }
+  /**
+   * Returns items where there is no local barcord that matches
+   * the shopify bar code.
+   * @param json
+   */
+  @Get('/products/parsed')
+  async parsed(): Promise<any> {
+    return this.readLocalShopCsv().then(data => {
+      return neatCsv(data, { separator: ' ' }).then(res => {
+        console.log("mergeShopifyWithLocal() - local products", res.length);
+        // missing bar codes from parsed csv??
+        return res;
+      });
+    });
   }
 
-  private async parseShopifyJson(json) {
-    this.logger.info(`parseShopifyJson()`);
-    if (!json.data) {
-      this.logger.error(`Error parsing products: ${Object.keys(json)}`);
-      return {};
-    }
-
-    const edges = json.data.products.edges;
-    if (json.data.products.pageInfo.hasNextPage) {
-      this.productEdges.concat(json.data.products.edges);
-      this.logger.info(`parseShopifyJson() ${this.productEdges.length}`);
-    }
-
-    if (json.data && json.data.products) {
-      let pds = json.data.products.edges.map(product => {
-        let sku = product.node.variants.edges[0].node.inventoryItem.sku;
-        product.shopifyId = sku;
-        return product;
-      });
-      return pds;
-    } else {
-      this.logger.error('no products' + Object.keys(json));
-      return {};
-    }
-  }
 
   /**
    * Local and Remote product data
    * @param json
    */
-  private mergeShopifyWithLocal(json) {
+  private async mergeShopifyWithLocal(json): Promise<any> {
+    console.log("mergeShopifyWithLocal() - shopify products", json.length);
     return this.readLocalShopCsv().then(data => {
+
       return neatCsv(data, { separator: ' ' }).then(res => {
+        console.log("mergeShopifyWithLocal() - local products", res.length);
         const localProducts = intersectionWith(res, json, (d, e) => {
-          return e.shopifyId === d.ItemLookupCode;
+          return e.shopifyId == d.ItemLookupCode;
         });
+        // missing bar codes from parsed csv??
+        const lookupCodes = res.map(r => r.ItemLookupCode)
+        // const test = res.filter(r => r.ItemLookupCode && r.ItemLookupCode.includes('50988230007'));
+        // 5098823000753 seavite shampoo
+        const missingBarcode = json.filter((d) => {
+          return !lookupCodes.includes(d.shopifyId);
+        });
+        console.log("mergeShopifyWithLocal() - missing bar codes", missingBarcode.length);
 
         const merged = localProducts.map(pr => {
           const found = json.filter(p => {
@@ -422,6 +535,7 @@ export class AppController {
           return found[0];
         });
         this.mergedProducts = merged;
+        console.log("mergeShopifyWithLocal() - merged products", merged.length);
         return merged;
       });
     });

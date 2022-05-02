@@ -9,7 +9,7 @@ import {
   pollBulkProducts,
 } from './queries';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
-import { shopifyUrl } from 'shopify-config';
+import { shopifyUrl } from './shopify-config';
 import { Logger } from 'winston';
 
 const fetch = require('node-fetch');
